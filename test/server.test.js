@@ -1,10 +1,14 @@
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/index.js';
 import { generateReply, validateChat } from '../server/ai.js';
 async function app(options, run) {
-  const server = createApp(options); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  try { await run(`http://127.0.0.1:${server.address().port}`); } finally { await new Promise(resolve => server.close(resolve)); }
+  const dir=await mkdtemp(path.join(tmpdir(),'jarvis-http-test-'));
+  const server = createApp({...options,dataDir:dir}); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try { await run(`http://127.0.0.1:${server.address().port}`); } finally { await new Promise(resolve => server.close(resolve)); await rm(dir,{recursive:true,force:true}); }
 }
 const input = { messages: [{ role: 'user', content: 'Hello' }], memory: ['I prefer concise answers.'] };
 const post = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

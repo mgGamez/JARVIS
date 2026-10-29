@@ -1,0 +1,23 @@
+# EXAMPLE ONLY: adapt paths/user, create a private /opt/jarvis/.data directory,
+# install Node 24.5+, configure .env and a trusted HTTPS reverse proxy first.
+[Unit]
+Description=JARVIS personal workflow brain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jarvis
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=/opt/jarvis/.env
+ExecStart=/usr/bin/node --use-env-proxy server/index.js
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/jarvis/.data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+// Explicit fixture-only CLI check; never saves a fact to a production brain.
+import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {localFetch} from '../server/local-http.js';
+const base=process.env.JARVIS_TEST_URL||'http://127.0.0.1:3004';const status=await(await localFetch(new URL('/api/status',base))).json();assert.equal(status.testFixture,true,'Use an explicitly labeled test fixture, not production.');
+const child=spawn(process.execPath,['--use-env-proxy','scripts/cli.js'],{env:{...process.env,JARVIS_BRAIN_URL:base},stdio:['pipe','pipe','pipe']});
+let buffer='',all='',index=0;const steps=[['You> ','/remember Synthetic CLI project uses Python.\n'],['yes/no: ','yes\n'],['You> ','/memory Synthetic\n'],['You> ','/task Summarize GitHub commits in owner/repo.\n'],['You> ','/exit\n']];
+const timer=setTimeout(()=>child.kill('SIGTERM'),25000);child.stdout.on('data',chunk=>{buffer+=chunk;all+=chunk;while(index<steps.length&&buffer.includes(steps[index][0])){const[marker,input]=steps[index++];buffer=buffer.slice(buffer.indexOf(marker)+marker.length);child.stdin.write(input);}});
+const code=await new Promise(resolve=>child.on('exit',resolve));clearTimeout(timer);assert.equal(code,0);assert.equal(index,steps.length);assert.match(all,/Synthetic CLI project/);assert.match(all,/Controlled commit summary/);console.log('CLI smoke passed: approved SQLite memory, retrieval and shared bounded task agent through the same brain. Explicit fixture only.');

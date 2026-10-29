@@ -33,12 +33,12 @@ export async function generateChat({ messages, memory, mode = 'chat' }, options)
   // Google's search entry-point HTML is preserved for attribution and rendered only
   // inside an empty-sandbox iframe; it cannot execute scripts or access the parent.
   const attribution = grounded ? candidate.groundingMetadata?.searchEntryPoint?.renderedContent : undefined;
-  return { reply, sources: sources.slice(0, 30), grounded: sources.length > 0, ...(typeof attribution === 'string' ? { searchAttribution: attribution.slice(0, 100000) } : {}), mode };
+  return { reply, provider:data.jarvisProvider||'gemini', model:data.jarvisModel||options.model||'gemini-3.1-flash-lite', sources: sources.slice(0, 30), grounded: sources.length > 0, ...(typeof attribution === 'string' ? { searchAttribution: attribution.slice(0, 100000) } : {}), mode };
 }
 export async function generateReply(input, options) { return (await generateChat(input, options)).reply; }
 export async function generateImage(prompt, options) {
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 4000) throw new ServiceError('Describe your image in 1–4,000 characters.', 400, 'INVALID_REQUEST');
-  const data = await providerRequest(options.imageModel || 'gemini-3.1-flash-image', { contents: [{ parts: [{ text: prompt.trim() }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }, { ...options, timeout: 120000 });
+  const data = await providerRequest(options.imageModel || 'gemini-3.1-flash-image', { contents: [{ parts: [{ text: prompt.trim() }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }, { ...options, forceGemini: true, timeout: 120000 });
   const parts = data.candidates?.[0]?.content?.parts || [];
   const image = parts.find(p => !p.thought && p.inlineData && ['image/png', 'image/jpeg', 'image/webp'].includes(p.inlineData.mimeType))?.inlineData;
   if (!image || typeof image.data !== 'string' || image.data.length > 14000000 || !/^[A-Za-z0-9+/=\r\n]+$/.test(image.data)) throw new ServiceError('The image model returned no supported image. Check model access, billing or safety restrictions.', 502, 'NO_IMAGE');

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { issueInput } from './github.js';
+import { validateCommand } from './protocol.js';
 import { ServiceError } from './provider.js';
 const fail = message => { throw new ServiceError(message, 400, 'INVALID_ACTION'); };
 export const desktopApps = Object.freeze({ notepad: 'notepad.exe', calculator: 'calc.exe', explorer: 'explorer.exe' });
@@ -12,6 +14,8 @@ export function validateAction(tool, args = {}) {
     if (typeof body !== 'string' || !body.trim() || body.length > 20000) fail('Message must contain 1–20,000 characters.');
     return { to, subject, body };
   }
+  if (tool === 'github.issue') return issueInput(args);
+  if (tool === 'device.task') { if (typeof args.deviceId !== 'string' || !/^[a-f0-9-]{36}$/.test(args.deviceId)) fail('Choose a paired device.'); return { deviceId: args.deviceId, command: validateCommand(args.command) }; }
   if (tool === 'desktop.launch') { if (!Object.hasOwn(desktopApps, args.app)) fail('Choose Notepad, Calculator or File Explorer.'); return { app: args.app }; }
   if (tool === 'reminders.create') {
     if (typeof args.title !== 'string' || !args.title.trim() || args.title.length > 200) fail('Reminder needs a title of 1–200 characters.');
@@ -40,7 +44,7 @@ export async function launchApp(app, { enabled = false, platform = process.platf
   validateAction('desktop.launch', { app });
   if (!enabled || platform !== 'win32') throw new ServiceError('App launching requires Windows and ENABLE_DESKTOP_TOOLS=true on the computer running JARVIS.', 409, 'DESKTOP_UNAVAILABLE');
   await new Promise((resolve, reject) => {
-    const child = spawnImpl(desktopApps[app], [], { shell: false, detached: true, stdio: 'ignore' });
+    const child = spawnImpl(desktopApps[app], [], { shell: false, detached: true, stdio: 'ignore', env: Object.fromEntries(Object.entries(process.env).filter(([key])=>!/KEY|TOKEN|SECRET|PASSWORD/i.test(key))) });
     child.once('error', () => reject(new ServiceError('Windows could not launch this app.', 502, 'LAUNCH_FAILED')));
     child.once('spawn', () => { child.unref(); resolve(); });
   });

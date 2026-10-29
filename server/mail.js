@@ -13,7 +13,7 @@ export class Gmail {
     const state = randomBytes(32).toString('hex'), verifier = randomBytes(32).toString('base64url'), browser = randomBytes(32).toString('hex');
     this.states.set(state, { verifier, browser, expires: Date.now() + 600000 });
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send', access_type: 'offline', prompt: 'consent', state, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256' }).toString();
+    url.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly', access_type: 'offline', prompt: 'consent', state, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256' }).toString();
     return { url: url.href, browser };
   }
   async callback(query, browser) {
@@ -67,6 +67,18 @@ export class Gmail {
     const result = await this.request('messages/send', { method: 'POST', body: JSON.stringify({ raw }) });
     if (!result.id) throw new ServiceError('Gmail did not confirm a message ID. Check Sent before trying again to avoid duplicates.', 502, 'SEND_UNCERTAIN');
     return { message: 'Gmail accepted the message.', id: result.id };
+  }
+  async calendarEvents(from, to) {
+    const token = await this.accessToken(); const events = []; let pageToken = '';
+    do {
+      const query = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), singleEvents: 'true', maxResults: '100', ...(pageToken ? { pageToken } : {}) });
+      let response; try { response = await this.fetch('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary') + '/events?' + query, { headers: { Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(20000) }); } catch { throw new ServiceError('Could not reach Google Calendar.',502,'CALENDAR_NETWORK'); }
+      if (!response.ok) throw new ServiceError('Calendar access failed. Enable Calendar API, reconnect Google with Calendar consent, and check permissions.',502,'CALENDAR_ACCESS');
+      const data = await response.json();
+      for (const e of data.items || []) if (e.status !== 'cancelled' && e.end?.dateTime && new Date(e.end.dateTime).getTime() > from && new Date(e.end.dateTime).getTime() <= to) events.push({ startAt:e.start?.dateTime||null,endAt:e.end.dateTime,key: e.id + ':' + e.end.dateTime, notes: ('Meeting: ' + (e.summary || '(untitled)') + '\nScheduled end: ' + e.end.dateTime + '\nNotes: ' + (e.description || '')).slice(0,12000) });
+      pageToken = data.nextPageToken || ''; if (events.length > 500) throw new ServiceError('Too many calendar events to process safely. Narrow the calendar.',409,'CALENDAR_LIMIT');
+    } while (pageToken);
+    return events;
   }
   async disconnect() { await this.store.remove('gmail'); return { message: 'Local Gmail tokens removed. Revoke JARVIS in your Google account permissions to remove account access.' }; }
 }

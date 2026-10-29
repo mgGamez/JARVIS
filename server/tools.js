@@ -1,5 +1,7 @@
 export function capabilities({ configured, imageModel, desktop, gmail }) {
   return [
+    { id: 'workflows', name: 'Workflows & authority', status: 'available', description: 'Versioned workflow canvas, prompt builder, interval/Calendar triggers and persistent approvals.' },
+    { id: 'devices', name: 'Paired computer companions', status: 'setup', description: 'Install and pair a companion for managed browser control, browser skill recording and opt-in Windows app launches.' },
     { id: 'memory', name: 'Personal memory', status: 'available', description: 'Explicitly approved browser-local facts; delete any time.' },
     { id: 'search', name: 'Web search', status: configured ? 'configured' : 'setup', description: 'Google Search grounding with sources. Select Search mode; model access and quota are verified per request.' },
     { id: 'research', name: 'Product research', status: configured ? 'configured' : 'setup', description: 'Grounded comparisons with source links. Select Research mode.' },

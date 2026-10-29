@@ -7,3 +7,9 @@ coverage/
 .data/
 *.pem
 *.key
+*.sqlite
+*.sqlite-*
+*.db
+client_secret*.json
+*.p12
+*.pfx

@@ -1,10 +1,11 @@
-JARVIS 2 — Windows setup
+JARVIS 3 — Windows setup
 
 1. Install Node.js 24 LTS (24.5 or newer) from https://nodejs.org/.
    Reopen PowerShell after installation. Verify: node --version
-2. Download the ZIP from GitHub using Code > Download ZIP.
-   Right-click JARVIS-main.zip and select Extract All.
-   Open the extracted JARVIS-main folder containing package.json.
+2. Download the ZIP from GitHub (Code > Download ZIP, or the version 3 ZIP link).
+   Right-click the ZIP and select Extract All.
+   The folder may be named JARVIS-main or JARVIS-3.0.0, depending on your download.
+   Open that extracted folder until you see package.json, public and server.
    In File Explorer, click the address bar, type powershell.exe, and press Enter.
    PowerShell opens in the correct folder.
 
@@ -67,11 +68,12 @@ Troubleshooting:
 - Only loopback access is enabled. No cloud environment settings or router port
   forwarding are required for use on this computer.
 
-GitHub Download ZIP includes the committed project files under JARVIS-main.
+GitHub Download ZIP includes the committed project files under JARVIS-main
+(or JARVIS-3.0.0 for the version 3 tag archive).
 Real credentials and .env are not committed or included. The .env.example file
 is a template with an empty API key; create your private .env as described above.
 
-JARVIS 2 tools:
+JARVIS tools:
 - Select Web search, Research, Debug code or Create image above the chat box.
 - Use /search, /research, /debug and /image for explicit routing.
 - Attach code/text only after removing passwords, API keys and personal secrets.
@@ -92,3 +94,32 @@ Upgrading an existing installation:
 4. Review new optional variables in .env.example; never overwrite a working key.
 5. Open PowerShell in the new package.json folder and run npm.cmd run check,
    npm.cmd test, then npm.cmd start. Open http://localhost:3000.
+
+JARVIS 3 additions:
+- Workflows: build with a prompt or template, select/edit steps, save and publish.
+- Open Trigger, recipient & saved notes to configure scheduling and mail recipient.
+- Scheduled workflows need the brain terminal/computer to stay running and awake.
+- Gmail/Calendar needs your Google OAuth Web client and account consent; reconnect
+  older Google connections to grant Calendar read-only access.
+- Authority controls automated reads, mail and paired-device actions. Every mail
+  and device action still requires approval. Destructive automation is blocked.
+- Shared goals & context are explicitly approved server-held information.
+- Computers & skills: pair the companion on each computer. Its optional browser
+  dependency needs npm.cmd ci and npm.cmd run browser:install in companion/.
+  Do NOT copy your Gemini key there. Use the one-time pairing token privately.
+- Read WORKFLOWS.md for exact companion setup, safe browser recording, file-root
+  restrictions, hosting and what is NOT implemented.
+- Natural realtime voice, global Windows recording, arbitrary screen control,
+  native phone control and the other product's paid plans are not included.
+
+Additional Command center features:
+- AI Core: configure only the model provider you actually use. Keep keys in .env.
+- Strict privacy requires local Ollama/llama.cpp and disables browser cloud speech.
+- Memory vault: explicitly approve SQLite facts; keyword search is built in.
+- Semantic search requires a locally installed Ollama embedding model.
+- GitHub: the local app needs its own GITHUB_API_TOKEN for private reads/writes.
+- Agent task mode or /task: bounded read-tool loop, with explicit write approval.
+- Terminal: npm.cmd run cli (brain must already be running).
+- Optional companion Git/Docker/system observations have fixed read-only commands.
+- Read CAPABILITIES.md: this is not a Microsoft Store/Google Play app, does not
+  include wake-word/offline voice, arbitrary shell or 70+ unrestricted tools.

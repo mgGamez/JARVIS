@@ -1,12 +1,14 @@
+import {initCore,setCoreStatus,openTasks} from './core.js';
+import { initAutomation, setAutomationStatus } from './automation.js';
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 let status = null, reminderTimer, lastReminderError = '', notified = new Set();
-export function setWorkspaceStatus(value) { status = value; }
+export function setWorkspaceStatus(value) { status = value; setAutomationStatus(value);setCoreStatus(value); }
 async function api(route, body) {
   const response = await fetch(route, body === undefined ? { signal: AbortSignal.timeout(15000) } : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jarvis-CSRF': status?.csrfToken || '' }, body: JSON.stringify(body), signal: AbortSignal.timeout(45000) });
   const data = await response.json(); if (!response.ok) throw Error(data.error || 'Request failed.'); return data;
 }
-function panel(title) { $('panelTitle').textContent = title; $('panelContent').replaceChildren(); if (!$('panel').open) $('panel').showModal(); }
+function panel(title) { $('panel').classList.remove('wide-panel'); $('panelTitle').textContent = title; $('panelContent').replaceChildren(); if (!$('panel').open) $('panel').showModal(); }
 function note(text) { $('panelContent').append(el('p', 'panel-description', text)); }
 function result(text, isError = false) { const n = $('toolResult'); if (n) { n.textContent = text; n.classList.toggle('error-text', isError); } }
 function resultArea() { const area = el('p', 'tool-result'); area.id = 'toolResult'; area.setAttribute('role', 'status'); $('panelContent').append(area); }
@@ -92,6 +94,7 @@ export function openPhone() {
 }
 export function renderArtifacts(msg, container) {
   if (msg.role !== 'assistant') return;
+  if(typeof msg.taskId==='string'&&/^[a-f0-9-]{36}$/.test(msg.taskId))container.append(button('Open task activity & approvals',()=>openTasks(msg.taskId)));
   if (typeof msg.imageUrl === 'string' && /^\/api\/images\/[a-f0-9-]{36}\.(png|jpg|webp)$/.test(msg.imageUrl)) {
     const image = el('img', 'generated-image'); image.src = msg.imageUrl; image.alt = 'AI-generated image for your prompt'; image.loading = 'lazy';
     image.onerror = () => { image.replaceWith(el('p', 'panel-description', 'This image is unavailable on this JARVIS installation.')); };
@@ -115,6 +118,7 @@ async function checkReminders() {
   } catch { lastReminderError = 'Reminders could not refresh. Check the server connection.'; $('reminderBanner').hidden = false; $('reminderBanner').textContent = lastReminderError; }
 }
 export function initWorkspace() {
+  initAutomation();initCore();
   $('toolsNav').onclick = openWorkspace;
   $('remindersNav').onclick = openReminders; $('mailNav').onclick = openMail;
   $('reminderBanner').onclick = openReminders;

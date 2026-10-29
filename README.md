@@ -1,8 +1,18 @@
-# JARVIS 2
+# JARVIS 3
 
 A personal AI assistant with an animated reactor interface, responsive black/cyan/purple HUD, Gemini chat, grounded web research, image generation, code analysis, browser voice, approved memory, reminders, Gmail and opt-in Windows app launching.
 
 **Start here on Windows: [WINDOWS-RUN.txt](WINDOWS-RUN.txt).** See [INTEGRATIONS.md](INTEGRATIONS.md) for account setup, costs, permissions and capability boundaries. No universal app control or native phone companion is claimed.
+
+## Command center and AI Core
+
+See [CAPABILITIES.md](CAPABILITIES.md) for seven optional text-provider adapters, prefix routing, strict local-AI privacy, best-effort secret redaction, token guards and call logs, SQLite-approved memory, optional local semantic recall, streamed bounded agent tasks, the shared CLI, prioritized GitHub integration and read-only companion Git/Docker/system tools. It also lists the supplied product claims that are not implemented; no 70-tool or native Store-app claim is made.
+
+## Workflows and paired computers
+
+See [WORKFLOWS.md](WORKFLOWS.md) for the prompt builder, editable canvas, published versions, persistent run/approval history, interval and Google Calendar triggers, enforced authority rules, shared goals/context, paired-computer queues, managed browser control and browser skill recording. Optional local file reads are confined to a dedicated approved folder. No new AI provider key is needed, but Google OAuth and a companion installation are separate requirements.
+
+The brain runs schedules while the Node process is running, even with browser tabs closed. It is not automatically deployed as an always-on hosted service. Existing speech controls remain browser speech recognition/TTS; realtime audio and general native desktop/phone control are not included. The commercial plans from usejarvis.dev are not part of this independent project.
 
 ## Run
 
@@ -22,6 +32,11 @@ Existing `.env` files are not updated automatically. If upgrading, add the new i
 
 ## Use
 
+- **Command center / AI Core**: actual operations, task agent, provider/privacy settings, usage log, SQLite memory vault and GitHub.
+- **Workflows**: bounded prompt builder, step canvas, published versions and reviewed runs.
+- **Authority / Shared context**: enforce automation rules and approve shared goals/preferences.
+- **Computers & skills**: paired companions, approved browser/file commands and browser routine recording.
+- **Agent task** or `/task`: same bounded task agent as the Command center/CLI; supported dictation can fill this mode, while approvals remain explicit.
 - **Auto / Chat**: conversation with explicitly approved memory. Auto selects common Search, Research, Debug and Image requests; choose a mode to override it.
 - **Web search** or `/search`: Google Search-grounded answers with source links and attribution, or an explicit notice when sources are absent.
 - **Product research** or `/research`: current comparisons with sources; verify prices and availability.
@@ -66,7 +81,7 @@ npm run check
 npm test
 ```
 
-Node tests cover chat validation, grounded search metadata, real image-byte storage, provider failures, reminders/calendar export, concurrent persistence, approval replay/argument tampering, Gmail OAuth/PKCE/token refresh and MIME encoding, host validation, authentication and the fixed Windows launcher adapter. External Gmail and Windows interactions use controlled adapters in tests; passing tests do not establish real-account/device access.
+Node tests cover chat validation, grounded search metadata, real image-byte storage, provider failures, reminders/calendar export, concurrent persistence, approval replay/argument tampering, Gmail OAuth/PKCE/token refresh and MIME encoding, host validation, authentication and the fixed Windows launcher adapter. External Gmail/Calendar and Windows interactions use controlled adapters in tests; passing tests do not establish real-account/device access.
 
 Optional browser smoke tests use Python, Playwright and installed Chromium:
 
@@ -93,3 +108,23 @@ server/tools.js   Capability states
 scripts/check.js  Cross-platform syntax checks
 test/             Integration and browser tests
 ```
+
+For the explicit workflow UI fixture (never a production server):
+
+```sh
+JARVIS_TEST_FIXTURE=true PORT=3002 node scripts/browser-fixture.js
+# In another terminal:
+python3 test/workflows-browser.py
+```
+
+Optional companion checks after `npm ci --prefix companion`:
+
+```sh
+node companion/queue-smoke.js
+# Requires an installed Playwright Chromium or COMPANION_CHROME_PATH:
+node companion/smoke.js
+```
+
+The queue test starts a separate companion process and reads only a temporary fixture file. Browser tests use controlled HTML, not personal accounts. Windows PowerShell uses `$env:NAME="value"` for environment overrides; see WINDOWS-RUN.txt for the standard setup.
+
+The shared terminal interface starts with `npm run cli` (`npm.cmd run cli` on Windows) while the brain is running. It uses the same AI settings and memory vault; ordinary terminal chat context is session-local. `/task` uses the bounded agent and prompts before approved reads/writes. See CAPABILITIES.md for limitations.

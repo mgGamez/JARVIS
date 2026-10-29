@@ -1,6 +1,6 @@
 # Integrations and realistic capabilities
 
-JARVIS 2 uses Gemini for chat, grounded web search, product research, code analysis and image generation. You do **not** need a ChatGPT or Claude API key. Their subscriptions do not supply Gemini API quota, Google account consent, operating-system permissions or universal phone control. This app implements the Gemini provider only; swapping providers requires another adapter.
+JARVIS uses Gemini for chat, grounded web search, product research, code analysis and image generation. You do **not** need a ChatGPT or Claude API key. Their subscriptions do not supply Gemini API quota, Google account consent, operating-system permissions or universal phone control. This app implements the Gemini provider only; swapping providers requires another adapter.
 
 ## What you can use
 
@@ -57,7 +57,7 @@ This is not arbitrary computer use: no screen capture, mouse/keyboard injection,
 
 ## Android/iPhone
 
-Mobile browsers can use chat, supported voice APIs, image downloads, Gmail OAuth where configured for a trusted HTTPS deployment, calendar import, and mail links. Direct app launching/control, alarm scheduling, background notification guarantees, accessibility-based automation, and screen control require native Android/iOS software, OS permission flows or vendor integrations. This release does not include a native companion. A ChatGPT or Claude API key does not bypass those OS restrictions.
+Mobile browsers can use chat, supported voice APIs, image downloads, Gmail OAuth where configured for a trusted HTTPS deployment, calendar import, and mail links. Direct app launching/control, alarm scheduling, background notification guarantees, accessibility-based automation, and screen control require native Android/iOS software, OS permission flows or vendor integrations. This release includes a paired Node companion for managed browsers, confined file reads and fixed Windows app launches; it does not include a native phone or general desktop-screen companion. See WORKFLOWS.md. A ChatGPT or Claude API key does not bypass those OS restrictions.
 
 Browser notifications in this release require a live page and may be unsupported on mobile without a service worker; in-app reminder notices remain available. For reminders while the browser is closed, import the calendar event and verify its alert on your device. No push-notification service or always-on background scheduler is claimed.
 
@@ -72,3 +72,7 @@ All privileged POST actions require a same-origin CSRF token. Outgoing email, ap
 Use `.env.example` as a template; do not overwrite a working `.env`. Text chat may have a free tier. Grounding and image generation have separate provider quotas, regions, model access and possible paid-tier requirements. Check your Google AI Studio/Cloud billing before use. JARVIS does not require buying ChatGPT Plus, a Claude subscription, or both API plans. There is no guarantee that all Gemini features are free.
 
 Never paste Gemini keys, OAuth secrets or refresh tokens into chat, screenshots, frontend files, Git commits, or issue reports. `.env`, `.data/`, private-key files, logs and dependency caches are excluded from Git. Generated images, reminders and Gmail tokens remain on the local server filesystem until removed; browser conversation/memory storage is a separate browser-local store.
+
+## JARVIS 3 additions
+
+See WORKFLOWS.md for Google Calendar read-only OAuth consent, persisted schedules, immutable workflow versions/approvals, shared context, paired workers and browser-only skill recording. Reconnect existing Google accounts to authorize the added Calendar scope. No separate OpenAI/Claude key is needed. The original browser-local memory and server private-data boundaries remain.

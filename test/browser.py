@@ -5,7 +5,7 @@ import os
 import shutil
 import json
 from datetime import datetime, timedelta
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZcoAAAAASUVORK5CYII='
 with sync_playwright() as p:
     browser=p.chromium.launch(executable_path=shutil.which('chromium'),headless=True,args=['--no-sandbox'])
@@ -75,7 +75,7 @@ with sync_playwright() as p:
     import base64
     page.route('**'+image_url,lambda route:route.fulfill(status=200,content_type='image/png',body=base64.b64decode(PNG)))
     page.locator('#newChat').click();page.locator('#prompt').fill('/image a test circle');page.locator('#sendButton').click()
-    page.locator('.generated-image').wait_for();page.wait_for_function("document.querySelector('.generated-image').naturalWidth > 0")
+    page.locator('.generated-image').wait_for();expect(page.locator('.generated-image')).to_have_js_property('naturalWidth',1)
     assert page.get_by_text('Download image',exact=True).count()==1
     # Attachment is reviewable text, never executed.
     page.locator('#attachment').set_input_files({'name':'sample.py','mimeType':'text/plain','buffer':b'print(1/0)'})

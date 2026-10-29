@@ -55,6 +55,7 @@ function renderMessages() {
     const content = node('div', 'message-content');
     const heading = node('div', 'message-heading', msg.role === 'user' ? 'You' : 'JARVIS');
     const date = new Date(msg.createdAt); if (!Number.isNaN(date.getTime())) heading.append(node('small', '', date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+    if(msg.provider)heading.append(node('small','',msg.provider+' · '+(msg.model||'')));
     content.append(heading, node('div', 'message-body', msg.content));
     renderArtifacts(msg, content);
     if (msg.failed) content.append(node('p', 'panel-description', 'Request failed · this turn is excluded from future AI context.'));
@@ -76,17 +77,19 @@ async function checkStatus() {
   try {
     const res = await fetch('/api/status', { signal: AbortSignal.timeout(8000) }); if (!res.ok) throw Error();
     status = await res.json(); setWorkspaceStatus(status); indicator.className = `connection ${status.configured ? 'ready' : 'error'}`;
-    indicator.replaceChildren(node('i'), document.createTextNode(status.configured ? 'Gemini configured' : 'Setup required'));
+    indicator.replaceChildren(node('i'), document.createTextNode(status.configured ? (status.aiProvider&&status.aiProvider!=='gemini'?status.aiProvider+' configured':'Gemini configured') : 'Setup required'));
     $('providerLabel').textContent = status.model;
-    if (!status.configured) showNotice('Connect your intelligence. Add a Gemini API key on the server to begin chatting.', 'Setup details', openSettings);
-  } catch { status = null; indicator.className = 'connection error'; indicator.replaceChildren(node('i'), document.createTextNode('Server unavailable')); showNotice('Cannot reach the JARVIS server. Start the server and check again.', 'Retry', checkStatus); }
+    if(status.testFixture)showNotice('Controlled test fixture: external AI and app success responses here are test data, not live provider results.');
+    if (!status.configured) showNotice('Configure the selected AI provider in AI Core and the private server .env to begin chatting.', 'Setup details', openSettings);
+  } catch { status = null; indicator.className = 'connection error'; indicator.replaceChildren(node('i'), document.createTextNode('Server unavailable')); showNotice('Cannot reach the JARVIS server. Start the server and check again.', 'Retry', checkStatus); }finally{syncVoice();}
 }
 async function send() {
   const rawInput = $('prompt').value.trim(); if (!rawInput || busy) return;
-  const command = rawInput.match(/^\/(search|research|image|debug)\s+/i);
+  const command = rawInput.match(/^\/(search|research|image|debug|task)\s+/i);
   const input = command ? rawInput.slice(command[0].length).trim() : rawInput;
   let mode = command ? command[1].toLowerCase() : $('chatMode').value;
-  if (mode === 'auto') mode = /^(create|generate|draw|make)\b.{0,40}\b(image|picture|illustration|logo|artwork)\b/i.test(input) ? 'image' : /\b(search|look up|latest|current|today|internet|web|news)\b/i.test(input) ? 'search' : /\b(compare|research|best product|best laptop|best phone)\b/i.test(input) ? 'research' : /\b(debug|traceback|stack trace|fix this code)\b/i.test(input) ? 'debug' : 'chat';
+  if(mode==='task')mode='agent';
+  if (mode === 'auto') mode = /\b(github|commits?|pull requests?|inbox|calendar|emails?|reminders?|docker|containers?|system info|memory usage)\b/i.test(input)||/\b(open|launch)\b.{0,30}\b(notepad|calculator|file explorer)\b/i.test(input)?'agent': /^(create|generate|draw|make)\b.{0,40}\b(image|picture|illustration|logo|artwork)\b/i.test(input) ? 'image' : /\b(search|look up|latest|current|today|internet|web|news)\b/i.test(input) ? 'search' : /\b(compare|research|best product|best laptop|best phone)\b/i.test(input) ? 'research' : /\b(debug|traceback|stack trace|fix this code)\b/i.test(input) ? 'debug' : 'chat';
   if (listening) recognition?.stop();
   hideNotice(); stopVoice();
   let chat = activeChat();
@@ -97,12 +100,18 @@ async function send() {
   $('prompt').value = ''; $('prompt').style.height = 'auto'; save(); render(); setBusy(true); scrollToEnd();
   try {
     const turns = chat.messages.filter(m => !m.failed).slice(-40).map(({ role, content }) => ({ role, content }));
-    const res = await fetch(mode === 'image' ? '/api/images' : '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mode === 'image' ? { prompt: input } : { messages: turns, memory: state.memories.map(m => m.text), mode }), signal: AbortSignal.timeout(mode === 'image' ? 135000 : 75000) });
-    const data = await res.json(); if (!res.ok) throw new Error(data.error || 'The request failed. Please retry.');
+    let data;
+    if(mode==='agent'){
+      const started=await fetch('/api/tasks/start',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-CSRF':status?.csrfToken||''},body:JSON.stringify({goal:input,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});const response=await started.json();if(!started.ok)throw Error(response.error||'Task could not start.');const deadline=Date.now()+360000;
+      for(;;){const res=await fetch('/api/tasks');if(!res.ok)throw Error('Could not refresh task status.');const tasks=await res.json();const task=tasks.runs.find(r=>r.id===response.run.id);if(!task)throw Error('Task record unavailable.');if(task.status==='failed'||task.status==='cancelled')throw Error(task.error||'Task failed.');if(task.status==='completed'||task.status==='waiting_read_approval'){data={reply:task.reply||(task.status==='waiting_read_approval'?'This task is paused for your read approval. Open task activity below.':'Task completed.'),taskId:task.id};break;}if(Date.now()>deadline){data={reply:'The task is still running. Open its saved activity below to inspect progress.',taskId:task.id};break;}await new Promise(resolve=>setTimeout(resolve,1000));}
+    }else{
+      const res = await fetch(mode === 'image' ? '/api/images' : '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mode === 'image' ? { prompt: input } : { messages: turns, memory: state.memories.map(m => m.text), mode }), signal: AbortSignal.timeout(mode === 'image' ? 135000 : 75000) });
+      data = await res.json(); if (!res.ok) throw new Error(data.error || 'The request failed. Please retry.');
+    }
     if (typeof data.reply !== 'string' || !data.reply.trim()) throw Error('The server returned no response.');
-    chat.messages.push({ role: 'assistant', content: data.reply, sources: data.sources, grounded: data.grounded, searchAttribution: data.searchAttribution, imageUrl: data.imageUrl, mode, createdAt: new Date().toISOString() }); save(); renderMessages();
+    chat.messages.push({ role: 'assistant', content: data.reply, provider:data.provider,model:data.model,taskId:data.taskId,sources: data.sources, grounded: data.grounded, searchAttribution: data.searchAttribution, imageUrl: data.imageUrl, mode, createdAt: new Date().toISOString() }); save(); renderMessages();
     if (state.settings.speak) speak(data.reply);
-    $('connection').className = 'connection ready'; $('connection').replaceChildren(node('i'), document.createTextNode('Gemini connected'));
+    $('connection').className = 'connection ready'; $('connection').replaceChildren(node('i'), document.createTextNode((data.provider||'Gemini')+' connected'));
   } catch (error) {
     chat.messages.at(-1).failed = true; save(); renderMessages();
     const message = error.name === 'TimeoutError' ? 'This request timed out. Please try again.' : error.message === 'Failed to fetch' ? 'Connection lost. Check the server and try again.' : error.message;
@@ -110,8 +119,11 @@ async function send() {
     $('connection').className = 'connection error'; $('connection').replaceChildren(node('i'), document.createTextNode('Request failed'));
   } finally { setBusy(false); scrollToEnd(); $('prompt').focus(); }
 }
+async function voiceAllowed(){try{const response=await fetch('/api/status',{signal:AbortSignal.timeout(4000)});if(!response.ok)throw Error();const current=await response.json();if(status)status.privacy=current.privacy;else status=current;syncVoice();if(current.privacy==='strict'){stopVoice();recognition?.abort();showNotice('Browser voice is disabled in Strict privacy because offline processing cannot be guaranteed.');return false;}return true;}catch{showNotice('Could not verify voice privacy settings. Use text until the server is reachable.');return false;}}
 function stopVoice() { if (hasTTS) speechSynthesis.cancel(); }
-function speak(text) {
+async function speak(text) {
+  if(!await voiceAllowed())return;
+  if(status?.privacy==='strict')return showNotice('Browser speech is disabled in Strict privacy because offline processing cannot be guaranteed.');
   if (!hasTTS) return showNotice('Spoken responses are not supported in this browser.');
   if (listening) recognition?.stop(); stopVoice();
   const utterance = new SpeechSynthesisUtterance(text);
@@ -123,9 +135,13 @@ function speak(text) {
 function syncVoice() {
   $('speechToggle').setAttribute('aria-pressed', String(state.settings.speak));
   $('speechToggle').setAttribute('aria-label', state.settings.speak ? 'Disable spoken responses' : 'Enable spoken responses');
-  $('speechToggle').disabled = !hasTTS;
+  $('speechToggle').disabled = !hasTTS || !status || status.privacy==='strict';
+  $('micButton').disabled = !status || status.privacy==='strict';
 }
-function toggleMic() {
+async function toggleMic() {
+  if(listening){recognition?.stop();return;}
+  if(!await voiceAllowed())return;
+  if(status?.privacy==='strict')return showNotice('Browser recognition is disabled in Strict privacy. Type instead; offline Whisper is not installed by this app.');
   if (listening) { recognition?.stop(); return; }
   if (!Recognition) return showNotice('Voice input is unavailable in this browser. Try a browser with SpeechRecognition support, such as Chrome. You can always type.');
   if (!window.isSecureContext) return showNotice('Microphone input requires HTTPS or localhost. Use a secure connection or type your message.');
@@ -138,7 +154,7 @@ function toggleMic() {
   recognition.onend = () => { listening = false; $('micButton').classList.remove('listening'); $('micButton').setAttribute('aria-label', 'Start voice input'); if ($('notice').textContent.startsWith('Listening')) hideNotice(); };
   try { recognition.start(); } catch { showNotice('Voice input could not start. Try again or use the keyboard.'); }
 }
-function openPanel(title) { $('panelTitle').textContent = title; $('panelContent').replaceChildren(); if (!$('panel').open) $('panel').showModal(); }
+function openPanel(title) { $('panel').classList.remove('wide-panel'); $('panelTitle').textContent = title; $('panelContent').replaceChildren(); if (!$('panel').open) $('panel').showModal(); }
 function openMemory() {
   openPanel('A memory, with your permission.'); $('panelContent').append($('memoryTemplate').content.cloneNode(true));
   $('memoryForm').onsubmit = event => {
@@ -159,7 +175,7 @@ function renderMemories() {
 }
 function openSettings() {
   openPanel('Make yourself at home.');
-  const info = node('div', 'settings-info'); info.textContent = `Provider: Google Gemini · ${status?.model || 'Server offline'}\n${status?.configured ? 'Server key present. Connection is verified only when a chat request succeeds.' : 'Add GEMINI_API_KEY to the server .env file, then restart the server. Never put a key in this page.'}`; info.style.whiteSpace = 'pre-line'; $('panelContent').append(info);
+  const info = node('div', 'settings-info'); info.textContent = `Provider: ${status?.aiProvider||'gemini'} · ${status?.model || 'Server offline'}\n${status?.configured ? 'Provider selected. Connection is verified only when a request succeeds.' : 'Add GEMINI_API_KEY to the server .env file, then restart the server. Never put a key in this page.'}`; info.style.whiteSpace = 'pre-line'; $('panelContent').append(info);
   const row = node('label', 'setting-row', 'Speak responses'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = state.settings.speak; checkbox.disabled = !hasTTS; checkbox.onchange = () => { state.settings.speak = checkbox.checked; save(); syncVoice(); if (!checkbox.checked) stopVoice(); }; row.append(checkbox); $('panelContent').append(row);
   const label = node('label', '', 'Voice'); label.htmlFor = 'voiceSelect'; const select = node('select'); select.id = 'voiceSelect';
   select.append(new Option('Browser default', '')); if (hasTTS) for (const voice of speechSynthesis.getVoices()) select.append(new Option(`${voice.name} (${voice.lang})`, voice.voiceURI)); select.value = state.settings.voice; select.onchange = () => { state.settings.voice = select.value; save(); };
@@ -208,3 +224,5 @@ $('attachment').onchange = async () => {
     showNotice('File added to your message. Review and remove secrets before sending it to Gemini.');
   } catch (e) { showNotice(e.message); } finally { $('attachment').value = ''; }
 };
+
+window.addEventListener('jarvis-ai-settings',event=>{if(status){status.privacy=event.detail.privacy;status.aiProvider=event.detail.provider;}if(status?.privacy==='strict'){stopVoice();recognition?.abort();}syncVoice();});
