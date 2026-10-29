@@ -1,11 +1,11 @@
-JARVIS — Windows setup
+JARVIS 2 — Windows setup
 
 1. Install Node.js 24 LTS (24.5 or newer) from https://nodejs.org/.
    Reopen PowerShell after installation. Verify: node --version
 2. Download the ZIP from GitHub using Code > Download ZIP.
    Right-click JARVIS-main.zip and select Extract All.
    Open the extracted JARVIS-main folder containing package.json.
-   In File Explorer, click the address bar, type powershell, and press Enter.
+   In File Explorer, click the address bar, type powershell.exe, and press Enter.
    PowerShell opens in the correct folder.
 
    Alternatively, if package.json is at Downloads\JARVIS-main\package.json, run:
@@ -62,11 +62,33 @@ Troubleshooting:
   and open http://localhost:3001 instead.
 - Gemini errors: check your key, account access and quota. Cloud-managed secret
   injection does not transfer to Windows. The default model in .env.example is
-  older; the override above worked in the cloud but availability on your account
-  still needs a real chat test. Do not disable TLS verification.
+  account-dependent; the override above worked in the cloud but availability on
+  your account still needs a real chat test. Do not disable TLS verification.
 - Only loopback access is enabled. No cloud environment settings or router port
   forwarding are required for use on this computer.
 
 GitHub Download ZIP includes the committed project files under JARVIS-main.
 Real credentials and .env are not committed or included. The .env.example file
 is a template with an empty API key; create your private .env as described above.
+
+JARVIS 2 tools:
+- Select Web search, Research, Debug code or Create image above the chat box.
+- Use /search, /research, /debug and /image for explicit routing.
+- Attach code/text only after removing passwords, API keys and personal secrets.
+- Reminders: review/approve, keep JARVIS open for alerts, or export to calendar.
+- Gmail: requires separate Google OAuth setup. Read INTEGRATIONS.md.
+- Windows apps: add ENABLE_DESKTOP_TOOLS=true to your local .env and restart.
+  Then Tools > Desktop apps. Each launch asks for approval.
+- No ChatGPT or Claude API key is needed. Gemini image/search access may have
+  separate billing or quota requirements.
+- Direct phone control, arbitrary app/screen automation and closed-browser push
+  notifications are not implemented. See INTEGRATIONS.md for exact boundaries.
+
+Upgrading an existing installation:
+1. Stop the old server with Ctrl+C.
+2. Keep your private .env and .data folder; do not upload them to GitHub.
+3. Extract the latest GitHub ZIP into a new folder and copy your .env (and .data
+   if you want previous generated images/reminders/Gmail access) into it.
+4. Review new optional variables in .env.example; never overwrite a working key.
+5. Open PowerShell in the new package.json folder and run npm.cmd run check,
+   npm.cmd test, then npm.cmd start. Open http://localhost:3000.

@@ -12,7 +12,7 @@ test('serves real assets with security headers and no credentials', async () => 
   for (const file of ['/', '/app.js', '/style.css', '/favicon.svg']) {
     const res = await fetch(base + file); assert.equal(res.status, 200); assert.ok(res.headers.get('content-security-policy')); assert.ok(!(await res.text()).includes('server-only-key'));
   }
-  const status = await (await fetch(base + '/api/status')).json(); assert.equal(status.configured, true); assert.equal(status.tools.find(t => t.id === 'search').status, 'planned'); assert.ok(!JSON.stringify(status).includes('server-only-key'));
+  const status = await (await fetch(base + '/api/status')).json(); assert.equal(status.configured, true); assert.equal(status.tools.find(t => t.id === 'search').status, 'configured'); assert.ok(!JSON.stringify(status).includes('server-only-key'));
   assert.equal((await fetch(base + '/.env')).status, 404);
   assert.equal((await fetch(base + '/server/ai.js')).status, 404);
 }));

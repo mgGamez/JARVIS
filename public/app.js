@@ -1,3 +1,4 @@
+import { initWorkspace, setWorkspaceStatus, renderArtifacts } from './workspace.js';
 const $ = id => document.getElementById(id);
 const STORAGE = 'jarvis.workspace.v1';
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -55,6 +56,8 @@ function renderMessages() {
     const heading = node('div', 'message-heading', msg.role === 'user' ? 'You' : 'JARVIS');
     const date = new Date(msg.createdAt); if (!Number.isNaN(date.getTime())) heading.append(node('small', '', date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
     content.append(heading, node('div', 'message-body', msg.content));
+    renderArtifacts(msg, content);
+    if (msg.failed) content.append(node('p', 'panel-description', 'Request failed · this turn is excluded from future AI context.'));
     const actions = node('div', 'message-tools');
     if (msg.role === 'assistant' && hasTTS) { const b = node('button', '', '♫ Read aloud'); b.onclick = () => speak(msg.content); actions.append(b); }
     const memory = node('button', '', '＋ Save a memory'); memory.onclick = () => { openMemory(); $('memoryInput').value = msg.content.slice(0, 500); $('memoryInput').focus(); }; actions.append(memory);
@@ -72,34 +75,38 @@ async function checkStatus() {
   const indicator = $('connection'); indicator.className = 'connection'; indicator.replaceChildren(node('i'), document.createTextNode('Checking server'));
   try {
     const res = await fetch('/api/status', { signal: AbortSignal.timeout(8000) }); if (!res.ok) throw Error();
-    status = await res.json(); indicator.className = `connection ${status.configured ? 'ready' : 'error'}`;
+    status = await res.json(); setWorkspaceStatus(status); indicator.className = `connection ${status.configured ? 'ready' : 'error'}`;
     indicator.replaceChildren(node('i'), document.createTextNode(status.configured ? 'Gemini configured' : 'Setup required'));
     $('providerLabel').textContent = status.model;
     if (!status.configured) showNotice('Connect your intelligence. Add a Gemini API key on the server to begin chatting.', 'Setup details', openSettings);
   } catch { status = null; indicator.className = 'connection error'; indicator.replaceChildren(node('i'), document.createTextNode('Server unavailable')); showNotice('Cannot reach the JARVIS server. Start the server and check again.', 'Retry', checkStatus); }
 }
 async function send() {
-  const input = $('prompt').value.trim(); if (!input || busy) return;
+  const rawInput = $('prompt').value.trim(); if (!rawInput || busy) return;
+  const command = rawInput.match(/^\/(search|research|image|debug)\s+/i);
+  const input = command ? rawInput.slice(command[0].length).trim() : rawInput;
+  let mode = command ? command[1].toLowerCase() : $('chatMode').value;
+  if (mode === 'auto') mode = /^(create|generate|draw|make)\b.{0,40}\b(image|picture|illustration|logo|artwork)\b/i.test(input) ? 'image' : /\b(search|look up|latest|current|today|internet|web|news)\b/i.test(input) ? 'search' : /\b(compare|research|best product|best laptop|best phone)\b/i.test(input) ? 'research' : /\b(debug|traceback|stack trace|fix this code)\b/i.test(input) ? 'debug' : 'chat';
   if (listening) recognition?.stop();
   hideNotice(); stopVoice();
   let chat = activeChat();
   if (!chat) { chat = { id: uid(), title: input.slice(0, 48), messages: [] }; state.chats.unshift(chat); state.chats = state.chats.slice(0, 100); currentId = chat.id; }
   // Failed turns are retained as user text locally, but not sent as consecutive user turns.
-  chat.messages.push({ role: 'user', content: input, createdAt: new Date().toISOString() });
+  chat.messages.push({ role: 'user', content: input, mode, createdAt: new Date().toISOString() });
   chat.messages = chat.messages.slice(-200);
   $('prompt').value = ''; $('prompt').style.height = 'auto'; save(); render(); setBusy(true); scrollToEnd();
   try {
     const turns = chat.messages.filter(m => !m.failed).slice(-40).map(({ role, content }) => ({ role, content }));
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: turns, memory: state.memories.map(m => m.text) }), signal: AbortSignal.timeout(55000) });
+    const res = await fetch(mode === 'image' ? '/api/images' : '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mode === 'image' ? { prompt: input } : { messages: turns, memory: state.memories.map(m => m.text), mode }), signal: AbortSignal.timeout(mode === 'image' ? 135000 : 75000) });
     const data = await res.json(); if (!res.ok) throw new Error(data.error || 'The request failed. Please retry.');
     if (typeof data.reply !== 'string' || !data.reply.trim()) throw Error('The server returned no response.');
-    chat.messages.push({ role: 'assistant', content: data.reply, createdAt: new Date().toISOString() }); save(); renderMessages();
+    chat.messages.push({ role: 'assistant', content: data.reply, sources: data.sources, grounded: data.grounded, searchAttribution: data.searchAttribution, imageUrl: data.imageUrl, mode, createdAt: new Date().toISOString() }); save(); renderMessages();
     if (state.settings.speak) speak(data.reply);
     $('connection').className = 'connection ready'; $('connection').replaceChildren(node('i'), document.createTextNode('Gemini connected'));
   } catch (error) {
-    chat.messages.at(-1).failed = true; save();
+    chat.messages.at(-1).failed = true; save(); renderMessages();
     const message = error.name === 'TimeoutError' ? 'This request timed out. Please try again.' : error.message === 'Failed to fetch' ? 'Connection lost. Check the server and try again.' : error.message;
-    showNotice(message, 'Retry message', () => { $('prompt').value = input; $('prompt').focus(); });
+    showNotice(message, 'Retry message', () => { $('prompt').value = rawInput; $('prompt').focus(); });
     $('connection').className = 'connection error'; $('connection').replaceChildren(node('i'), document.createTextNode('Request failed'));
   } finally { setBusy(false); scrollToEnd(); $('prompt').focus(); }
 }
@@ -150,12 +157,6 @@ function renderMemories() {
     row.append(node('p', '', memory.text), del); $('memoryList').append(row);
   }
 }
-function openTools() {
-  openPanel('Built to grow with you.'); $('panelContent').append(node('p', 'panel-description', 'A transparent view of what JARVIS can do today. Planned integrations are not connected and cannot be used by the assistant.'));
-  for (const tool of status?.tools || [{ name: 'Capabilities unavailable', description: 'Reconnect to the server to load the capability registry.', status: 'offline' }]) {
-    const row = node('div', 'tool-row'); const info = node('div'); info.append(node('strong', '', tool.name), node('p', '', tool.description)); row.append(info, node('span', `tool-badge ${tool.status}`, tool.status.toUpperCase())); $('panelContent').append(row);
-  }
-}
 function openSettings() {
   openPanel('Make yourself at home.');
   const info = node('div', 'settings-info'); info.textContent = `Provider: Google Gemini · ${status?.model || 'Server offline'}\n${status?.configured ? 'Server key present. Connection is verified only when a chat request succeeds.' : 'Add GEMINI_API_KEY to the server .env file, then restart the server. Never put a key in this page.'}`; info.style.whiteSpace = 'pre-line'; $('panelContent').append(info);
@@ -165,7 +166,7 @@ function openSettings() {
   $('panelContent').append(label, select);
   const rateLabel = node('label', '', 'Speaking speed'); rateLabel.htmlFor = 'rateSelect'; const rate = node('select'); rate.id = 'rateSelect'; for (const [value, text] of [[0.8, 'Relaxed'], [1, 'Natural'], [1.2, 'Brisk']]) rate.append(new Option(text, String(value))); rate.value = String(state.settings.rate); rate.onchange = () => { state.settings.rate = Number(rate.value); save(); }; $('panelContent').append(rateLabel, rate);
   const stop = node('button', 'secondary-button', 'Stop speaking'); stop.onclick = stopVoice; const test = node('button', 'secondary-button', 'Test voice'); test.disabled = !hasTTS; test.onclick = () => speak('Hello. I am JARVIS. Ready when you are.'); const recheck = node('button', 'secondary-button', 'Check connection'); recheck.onclick = async () => { await checkStatus(); if ($('panel').open) openSettings(); }; $('panelContent').append(test, stop, recheck);
-  $('panelContent').append(node('p', 'panel-description', `Voice input: ${Recognition ? 'browser API detected; microphone permission and service availability still required' : 'not supported in this browser'}. Speech playback: ${hasTTS ? 'browser API detected; available voices vary by device' : 'not supported'}.\nConversation text and approved memories are sent to Google when you send a message. History and preferences are saved only in this browser. Browser speech recognition may use a third-party service. No device apps, alarms, or automations are controlled.`));
+  $('panelContent').append(node('p', 'panel-description', `Voice input: ${Recognition ? 'browser API detected; microphone permission and service availability still required' : 'not supported in this browser'}. Speech playback: ${hasTTS ? 'browser API detected; available voices vary by device' : 'not supported'}.\nConversation text and approved memories are sent to Google when you send a message. History and preferences are saved only in this browser. Browser speech recognition may use a third-party service. Use Tools for Gmail, reminders and approved Windows launches. Direct phone control is not available.`));
 }
 function resizePrompt() { $('prompt').style.height = 'auto'; $('prompt').style.height = `${Math.min($('prompt').scrollHeight, 160)}px`; }
 $('newChat').onclick = () => { if (busy) return; currentId = null; stopVoice(); render(); closeSidebar(); $('prompt').focus(); };
@@ -173,7 +174,7 @@ $('sendButton').onclick = send; $('prompt').oninput = resizePrompt;
 $('prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); } };
 $('micButton').onclick = toggleMic;
 $('speechToggle').onclick = () => { state.settings.speak = !state.settings.speak; save(); syncVoice(); if (!state.settings.speak) stopVoice(); else speak('Voice responses enabled.'); };
-$('memoryNav').onclick = () => { closeSidebar(); openMemory(); }; $('toolsNav').onclick = () => { closeSidebar(); openTools(); }; $('settingsNav').onclick = () => { closeSidebar(); openSettings(); }; $('chatNav').onclick = closeSidebar;
+$('memoryNav').onclick = () => { closeSidebar(); openMemory(); }; $('settingsNav').onclick = () => { closeSidebar(); openSettings(); }; $('chatNav').onclick = closeSidebar;
 $('closePanel').onclick = () => $('panel').close();
 $('panel').onclick = event => { if (event.target === $('panel')) { const rect = $('panel').getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('panel').close(); } };
 $('menuButton').onclick = () => { const open = $('sidebar').classList.toggle('open'); $('menuButton').setAttribute('aria-expanded', String(open)); };
@@ -192,4 +193,18 @@ function controlIcon(id, paths) {
 }
 controlIcon('micButton', ['M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0Z', 'M5 10v2a7 7 0 0 0 14 0v-2', 'M12 19v3M8 22h8']);
 controlIcon('speechToggle', ['M11 4 5 9H2v6h3l6 5Z', 'M15 8a6 6 0 0 1 0 8M18 4a11 11 0 0 1 0 16']);
-render(); await checkStatus(); if (storageWarning) showNotice(storageWarning);
+render(); await checkStatus(); initWorkspace(); if (storageWarning) showNotice(storageWarning);
+
+$('attachButton').onclick = () => $('attachment').click();
+$('attachment').onchange = async () => {
+  const file = $('attachment').files[0]; if (!file) return;
+  try {
+    if (file.size > 48000) throw Error('Attach a text excerpt smaller than 48 KB.');
+    if (!/\.(txt|md|js|ts|py|json|csv|log|html|css|sql|jsx|tsx|yaml|yml)$/i.test(file.name)) throw Error('Choose a supported text, code or log file.');
+    const text = await file.text(); if (text.includes('\0')) throw Error('Binary files are not supported.');
+    const combined = `${$('prompt').value}\n\nFile: ${file.name}\n${text}`.trim();
+    if (combined.length > 12000) throw Error('This text exceeds the 12,000-character message limit. Attach a smaller excerpt.');
+    $('prompt').value = combined; $('chatMode').value = 'debug'; resizePrompt();
+    showNotice('File added to your message. Review and remove secrets before sending it to Gemini.');
+  } catch (e) { showNotice(e.message); } finally { $('attachment').value = ''; }
+};
