@@ -2,7 +2,9 @@ JARVIS 3 — Windows setup
 
 1. Install Node.js 24 LTS (24.5 or newer) from https://nodejs.org/.
    Reopen PowerShell after installation. Verify: node --version
-2. Download the ZIP from GitHub (Code > Download ZIP, or the version 3 ZIP link).
+2. Download the latest main ZIP from:
+   https://github.com/mgGamez/JARVIS/archive/refs/heads/main.zip
+   The original v3.0.0 tag archive predates the HUD redesign.
    Right-click the ZIP and select Extract All.
    The folder may be named JARVIS-main or JARVIS-3.0.0, depending on your download.
    Open that extracted folder until you see package.json, public and server.
@@ -123,3 +125,14 @@ Additional Command center features:
 - Optional companion Git/Docker/system observations have fixed read-only commands.
 - Read CAPABILITIES.md: this is not a Microsoft Store/Google Play app, does not
   include wake-word/offline voice, arbitrary shell or 70+ unrestricted tools.
+
+Version 3.0 HUD update (version number stays 3.0.0):
+- Open the Assistant tab for all chat modes; the menu opens existing tools/history.
+- MEMORY, GITHUB & TASKS opens the advanced command console.
+- System overview measures the brain computer, not unpaired remote devices.
+- Emergency stop disables schedules and queued automation persistently.
+  Resume leaves schedules disabled until you explicitly enable them.
+- After the first setup, double-click START-JARVIS.cmd to start and open JARVIS.
+  It preserves .env and can reuse an already-running v3 server. Keep its window
+  open. The Node launcher logic was tested on Linux; actual Windows double-click
+  and voice hardware still need testing on your computer.

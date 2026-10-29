@@ -1,6 +1,6 @@
 # Integrations and realistic capabilities
 
-JARVIS uses Gemini for chat, grounded web search, product research, code analysis and image generation. You do **not** need a ChatGPT or Claude API key. Their subscriptions do not supply Gemini API quota, Google account consent, operating-system permissions or universal phone control. This app implements the Gemini provider only; swapping providers requires another adapter.
+JARVIS uses Gemini for chat, grounded web search, product research, code analysis and image generation. You do **not** need a ChatGPT or Claude API key. Their subscriptions do not supply Gemini API quota, Google account consent, operating-system permissions or universal phone control. Gemini powers search and images; text chat also supports the six optional providers documented in CAPABILITIES.md. Configure only the provider you choose.
 
 ## What you can use
 

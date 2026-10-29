@@ -1,3 +1,4 @@
+import {Telemetry} from './dashboard.js';
 import http from 'node:http';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,7 @@ import { providerRequest } from './provider.js';
 import { Automation, draftWorkflow, compileWorkflow, template, validateWorkflow } from './automation.js';
 import { ApprovalQueue, launchApp, calendarFile } from './actions.js';
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/workspace.js': ['workspace.js', 'text/javascript; charset=utf-8'], '/automation.js': ['automation.js', 'text/javascript; charset=utf-8'], '/core.js': ['core.js', 'text/javascript; charset=utf-8'] };
+const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/workspace.js': ['workspace.js', 'text/javascript; charset=utf-8'], '/automation.js': ['automation.js', 'text/javascript; charset=utf-8'], '/core.js': ['core.js', 'text/javascript; charset=utf-8'], '/hud.js':['hud.js','text/javascript; charset=utf-8'], '/hud.css':['hud.css','text/css; charset=utf-8'] };
 const hash = value => createHash('sha256').update(value).digest();
 export function createApp(options = {}) {
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY;
@@ -24,6 +25,7 @@ export function createApp(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const store = new Store(options.dataDir || process.env.JARVIS_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)));
   const memory=new MemoryVault(store.directory);
+  const telemetry=new Telemetry();
   const aiOptions={apiKey,model,fetchImpl,store};
   const github=new GitHub({fetchImpl,token:options.githubToken??process.env.GITHUB_API_TOKEN??process.env.GH_TOKEN});
   const gmail = new Gmail(store, { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET, redirectUri: process.env.GOOGLE_REDIRECT_URI, fetchImpl, ...options.gmail });
@@ -55,6 +57,7 @@ export function createApp(options = {}) {
         const mail = await gmail.status();const ai=await store.read('ai-settings',defaultAI());
         return json(200, { version: '3.0.0',testFixture:options.testFixture===true, configured: ['ollama','llama'].includes(ai.provider)?true:Boolean(ai.provider==='gemini'?apiKey:process.env[keyNames[ai.provider]]), model:ai.models[ai.provider], aiProvider:ai.provider, privacy:ai.privacy, imageModel, desktop, mail, csrfToken: csrf, provider: 'Google Gemini', tools: capabilities({ configured: Boolean(apiKey), imageModel, desktop, gmail: mail }) });
       }
+      if(req.method==='GET'&&url.pathname==='/api/dashboard'){const[flows,tasks,reminders,settings,usage,mail,system]=await Promise.all([automation.snapshot(),agent.list(),store.read('reminders',[]),store.read('ai-settings',defaultAI()),store.read('ai-usage',{calls:[]}),gmail.status(),telemetry.sample(store.directory)]);return json(200,{flows,tasks,reminders,system,settings:{provider:settings.provider,model:settings.models[settings.provider],privacy:settings.privacy},providers:Object.keys(providerDefaults).map(id=>({id,configured:['ollama','llama'].includes(id)?null:Boolean(id==='gemini'?apiKey:process.env[keyNames[id]]),lastCall:(usage.calls||[]).filter(c=>c.provider===id).at(-1)||null})),apps:{mail,github:{configured:Boolean(github.token)}},memoryCount:memory.list().length});}
       if(req.method==='GET'&&url.pathname==='/api/overview'){const [tasks,flows,reminders]=await Promise.all([agent.list(),automation.snapshot(),store.read('reminders',[])]);return json(200,{activeTasks:tasks.filter(r=>['queued','running'].includes(r.status)).length,pendingApprovals:flows.runs.filter(r=>r.status==='waiting_approval'&&r.approval?.expires>Date.now()).length+tasks.filter(r=>r.status==='waiting_read_approval'&&r.pendingReads?.expiresAt>Date.now()).length+[...approvals.pending.values()].filter(a=>a.expiresAt>Date.now()).length,onlineDevices:flows.devices.filter(d=>d.online).length,pendingDeviceJobs:flows.jobs.filter(j=>j.status==='queued').length,upcomingReminders:reminders.filter(r=>!r.completed).length,observedAt:Date.now()});}
       if(req.method==='GET'&&url.pathname==='/api/tasks')return json(200,{runs:await agent.list()});
       if(req.method==='GET'&&url.pathname==='/api/tasks/events'){const id=url.searchParams.get('id');if(!(await agent.list()).some(r=>r.id===id))return json(404,{error:'Task not found.'});res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store','Connection':'keep-alive'});let cursor=0;let polling=false;const timer=setInterval(async()=>{if(polling)return;polling=true;try{const run=(await agent.list()).find(r=>r.id===id);for(const event of (run?.events||[]).slice(cursor)){res.write('data: '+JSON.stringify(event)+'\n\n');cursor++;}if(!run||['completed','failed','cancelled','waiting_read_approval'].includes(run.status)){res.write('event: done\ndata: '+JSON.stringify({status:run?.status})+'\n\n');clearInterval(timer);res.end();}}catch{clearInterval(timer);res.end();}finally{polling=false;}},500);timer.unref();res.on('close',()=>clearInterval(timer));return;}
@@ -91,6 +94,8 @@ export function createApp(options = {}) {
         if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'Expected an object.' });
         if (url.pathname === '/api/companion/poll') return json(200, await automation.poll((req.headers.authorization || '').slice(7),body.capabilities,body.busy===true));
         if (url.pathname === '/api/companion/result') { await automation.finish((req.headers.authorization || '').slice(7),body.id,body.result,body.error); return json(200,{ok:true}); }
+        if(url.pathname==='/api/control/stop'){await automation.emergencyStop();approvals.pending.clear();for(const task of await agent.list())if(!['completed','failed','cancelled'].includes(task.status))await agent.cancel(task.id);return json(200,{message:'Automation paused; schedules disabled and queued approvals/tasks cancelled. Already-running external operations cannot be undone.'});}
+        if(url.pathname==='/api/control/resume'){if(body.approved!==true)throw new ServiceError('Confirm resuming automation.',403,'APPROVAL_REQUIRED');await automation.resume();return json(200,{message:'Automation resumed. Schedules remain disabled until you enable them.'});}
         if(url.pathname==='/api/tasks/cancel'){await agent.cancel(body.id);return json(200,{ok:true});}
         if(url.pathname==='/api/tasks/start')return json(200,{run:await agent.start(body.goal,body.timeZone)});
         if(url.pathname==='/api/tasks/approve-read'){await agent.approveReads(body.id,body.pendingId,body.approved);return json(200,{ok:true});}
@@ -128,6 +133,7 @@ export function createApp(options = {}) {
           } finally { active--; }
         }
         if (url.pathname === '/api/actions/prepare') {
+          await automation.requireRunning();
           if (body.tool === 'github.issue') await automation.requireAllowed('external.write');
           if (body.tool === 'mail.send') await automation.requireAllowed('mail.send');
           if (['desktop.launch','device.task'].includes(body.tool)) await automation.requireAllowed('device.execute');
@@ -136,6 +142,7 @@ export function createApp(options = {}) {
           return json(200, { action: approvals.prepare(body.tool, body.args) });
         }
         if (url.pathname === '/api/actions/execute') {
+          await automation.requireRunning();
           const action = approvals.consume(body.id, body.approved);
           if (action.tool === 'github.issue') {await automation.requireAllowed('external.write');return json(200,await github.createIssue(action.args));}
           if (action.tool === 'device.task') return json(200,{message:'Approved task queued on the selected computer.',job:await automation.enqueue(action.args.deviceId,action.args.command)});

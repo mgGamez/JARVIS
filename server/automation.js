@@ -5,7 +5,7 @@ import { validateAction } from './actions.js';
 import { validateCommand } from './protocol.js';
 const fail = (message, status = 400) => { throw new ServiceError(message, status, 'AUTOMATION_ERROR'); };
 const digest = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
-const initial = () => ({ workflows: [], runs: [], devices: [], jobs: [], skills: [], context: { goal: '', preferences: '', facts: '' }, authority: { 'source.read': 'allow', 'mail.send': 'ask', 'device.execute': 'ask', 'data.delete': 'block', 'external.write':'ask' } });
+const initial = () => ({ halted:false,workflows: [], runs: [], devices: [], jobs: [], skills: [], context: { goal: '', preferences: '', facts: '' }, authority: { 'source.read': 'allow', 'mail.send': 'ask', 'device.execute': 'ask', 'data.delete': 'block', 'external.write':'ask' } });
 export function template(kind = 'meeting') {
   const names = { meeting: 'Meeting follow-ups', call: 'Call preparation', research: 'Research digest' };
   if (!names[kind]) fail('Unknown template.');
@@ -48,6 +48,9 @@ export class Automation {
     await this.update(s => ({ ...s, authority })); return authority;
   }
   async requireAllowed(key) { if ((await this.read()).authority[key] === 'block') fail(`Your authority rules block ${key}.`, 403); }
+  async emergencyStop(){await this.update(s=>{s.halted=true;s.stoppedAt=this.clock();for(const w of s.workflows)w.enabled=false;for(const j of s.jobs)if(j.status==='queued'){j.status='cancelled';j.error='Emergency stop before pickup.';}for(const r of s.runs)if(r.status==='executing'){r.stopRequested=true;}else if(['queued','waiting_approval','waiting_device','running'].includes(r.status)){r.status='cancelled';r.approval=null;r.error='Emergency stop requested. Already-running external operations cannot be undone.';}return s;});}
+  async resume(){await this.update(s=>({...s,halted:false}));}
+  async requireRunning(){if((await this.read()).halted)fail('Automation is paused by emergency stop. Resume explicitly in Command Center.',409);}
   async save(value, id) {
     const draft = validateWorkflow(value); let saved;
     await this.update(s => {
@@ -57,11 +60,12 @@ export class Automation {
     }); return saved;
   }
   async publish(id) {
-    let saved; await this.update(s => { const w = s.workflows.find(w => w.id === id); if (!w) fail('Workflow not found.', 404); const definition = validateWorkflow(w.draft, { publish: true }); if (w.versions.length >= 100) fail('Version limit reached. Create another workflow.'); const version = { number: w.versions.length + 1, definition, publishedAt: this.clock() }; w.versions.push(version); w.enabled = definition.enabled; w.nextAt = this.clock() + definition.trigger.minutes * 60000; w.calendarCheckpoint = this.clock(); w.calendarSeen = []; saved = w; return s; }); return saved;
+    let saved; await this.update(s => { const w = s.workflows.find(w => w.id === id); if (!w) fail('Workflow not found.', 404); const definition = validateWorkflow(w.draft, { publish: true });if(s.halted&&definition.enabled)fail('Resume automation before enabling a trigger.',409); if (w.versions.length >= 100) fail('Version limit reached. Create another workflow.'); const version = { number: w.versions.length + 1, definition, publishedAt: this.clock() }; w.versions.push(version); w.enabled = definition.enabled; w.nextAt = this.clock() + definition.trigger.minutes * 60000; w.calendarCheckpoint = this.clock(); w.calendarSeen = []; saved = w; return s; }); return saved;
   }
-  async enable(id, enabled) { if (typeof enabled !== 'boolean') fail('Enabled must be true or false.'); await this.update(s => { const w = s.workflows.find(w => w.id === id); if (!w?.versions.length) fail('Publish the workflow first.'); w.enabled = enabled; w.draft.enabled = enabled; w.nextAt = this.clock() + w.versions.at(-1).definition.trigger.minutes * 60000; w.calendarCheckpoint = this.clock(); return s; }); }
+  async enable(id, enabled) { if (typeof enabled !== 'boolean') fail('Enabled must be true or false.'); await this.update(s => { const w = s.workflows.find(w => w.id === id); if (!w?.versions.length) fail('Publish the workflow first.');if(s.halted&&enabled)fail('Resume automation first.',409); w.enabled = enabled; w.draft.enabled = enabled; w.nextAt = this.clock() + w.versions.at(-1).definition.trigger.minutes * 60000; w.calendarCheckpoint = this.clock(); return s; }); }
   async start(id, notes, eventKey = null) {
     let run; await this.update(s => {
+      if(s.halted)fail('Automation is paused.',409);
       const w = s.workflows.find(w => w.id === id); if (!w?.versions.length) fail('Publish a version before running it.');
       if (typeof notes !== 'string' || notes.length > 12000) fail('Notes must be text of up to 12,000 characters.');
       if (eventKey && s.runs.some(r => r.eventKey === eventKey && r.workflowId === id)) return s;
@@ -71,7 +75,7 @@ export class Automation {
       run = { id: randomUUID(), workflowId: id, name: w.versions.at(-1).definition.name, version: w.versions.at(-1).number, definition: structuredClone(w.versions.at(-1).definition), context: structuredClone(s.context), notes, cursor: 0, status: 'queued', createdAt: this.clock(), eventKey, log: [] }; s.runs.push(run); return s;
     }); return run;
   }
-  async mutateRun(id, fn) { let result; await this.update(s => { const run = s.runs.find(r => r.id === id); if (!run) fail('Run not found.',404); fn(run,s); result = structuredClone(run); return s; }); return result; }
+  async mutateRun(id, fn) { let result; await this.update(s => { const run = s.runs.find(r => r.id === id); if (!run) fail('Run not found.',404); const cancelled=run.status==='cancelled';fn(run,s);if(cancelled){run.status='cancelled';run.approval=null;run.actionGrant=null;} result = structuredClone(run); return s; }); return result; }
   async approve(id, approvalId, approved) {
     if (approved !== true) fail('Explicit approval is required.',403);
     await this.mutateRun(id, (r,s) => {
@@ -86,7 +90,7 @@ export class Automation {
   actionPayload(run, next) { if (next?.type === 'mail') return validateAction('mail.send', { to: run.definition.recipient, subject: run.output?.subject, body: run.output?.body }); if(next?.type==='github')return validateAction('github.issue',{repository:next.repository,title:run.output?.subject,body:run.output?.body}); if (next?.type === 'device') return { deviceId: next.deviceId, command: validateCommand(next.command) }; return { output: run.output }; }
   async advance(run) {
     const step = run.definition.steps[run.cursor]; if (!step) { await this.mutateRun(run.id, r => { r.status = 'completed'; }); return; }
-    const data = await this.read();
+    const data = await this.read();if(data.halted)return;
     if (step.type === 'input') {
       if (data.authority['source.read'] === 'block') fail('Authority blocks reading sources.',403);
       if (data.authority['source.read'] === 'ask' && run.approved?.cursor !== run.cursor) { await this.pause(run,'source.read',{ notes: run.notes }); return; }
@@ -96,7 +100,7 @@ export class Automation {
       await this.mutateRun(run.id,r => { r.status = 'running'; });
       const output = await this.draft({ step, notes: run.output?.body || run.input || run.notes, context: run.context });
       if (!output || typeof output.subject !== 'string' || typeof output.body !== 'string' || !output.body.trim()) fail('AI returned no valid draft.');
-      await this.mutateRun(run.id,r => { r.output = { subject: output.subject.slice(0,200), body: output.body.slice(0,20000) }; r.cursor++; r.status = 'queued'; r.log.push({ step: step.label, state: 'completed', at: this.clock() }); }); return;
+      await this.mutateRun(run.id,(r,s) => { if(s.halted||r.status==='cancelled'){r.status='cancelled';return;}r.output = { subject: output.subject.slice(0,200), body: output.body.slice(0,20000) }; r.cursor++; r.status = 'queued'; r.log.push({ step: step.label, state: 'completed', at: this.clock() }); }); return;
     }
     if (step.type === 'approval') {
       const next = run.definition.steps[run.cursor + 1]; const key = next?.type === 'mail' ? 'mail.send' : next?.type==='github'?'external.write':next?.type === 'device' ? 'device.execute' : 'output.review'; const payload = this.actionPayload(run,next);
@@ -108,16 +112,16 @@ export class Automation {
     if (data.authority[key] === 'block' || run.actionGrant?.cursor !== run.cursor || run.actionGrant.digest !== digest(payload) || run.actionGrant.expires < this.clock()) fail('Action lacks valid approval or is blocked.',403);
     // Persist before an external side effect. A crash will require manual reconciliation,
     // never an automatic retry that could duplicate an email or app action.
-    await this.mutateRun(run.id,r => { r.status = 'executing'; r.actionGrant = null; });
+    await this.mutateRun(run.id,(r,s) => { if(s.halted||r.status==='cancelled')fail('Automation paused before execution.',409);r.status = 'executing'; r.actionGrant = null; });
     if (step.type === 'mail'||step.type==='github') {
-      try { const result = await (step.type==='mail'?this.send(payload):this.github(payload)); await this.mutateRun(run.id,r => { r.result = result; r.cursor++; r.status = 'queued'; r.log.push({ step: step.label, state: 'accepted', at: this.clock() }); }); }
+      try { const result = await (step.type==='mail'?this.send(payload):this.github(payload)); await this.mutateRun(run.id,(r,s) => { r.result = result; r.cursor++; r.status = s.halted||r.stopRequested?'cancelled':'queued';if(r.status==='cancelled')r.error='Stopped after an in-flight operation; its recorded result is retained.'; r.log.push({ step: step.label, state: 'accepted', at: this.clock() }); }); }
       catch (e) { await this.mutateRun(run.id,r => { const disconnected=['MAIL_DISCONNECTED','OAUTH_NOT_CONFIGURED','OAUTH_RECONNECT'].includes(e.code);r.status=disconnected?'failed':'uncertain';r.error=disconnected?e.message:step.type==='github'?'Issue outcome could not be confirmed. Check repository issues; this run will not retry automatically.':'Mail outcome could not be confirmed. Check Gmail Sent; this run will not retry automatically.'; }); }
     } else { const job = await this.enqueue(payload.deviceId,payload.command); await this.mutateRun(run.id,r => { r.jobId = job.id; r.status = 'waiting_device'; }); }
   }
   async tick() {
     if (this.busy) return; this.busy = true;
     try {
-      let data = await this.read();
+      let data = await this.read();if(data.halted)return;
       for (const workflow of data.workflows.filter(w => w.enabled && w.versions.length)) {
         const def = workflow.versions.at(-1).definition;
         try {
@@ -158,7 +162,7 @@ export class Automation {
     const device=await this.authenticate(token);let job=null;
     await this.update(s=>{const d=s.devices.find(d=>d.id===device.id);if(!d)fail('Device revoked.',401);d.lastSeen=this.clock();d.capabilities=Array.isArray(capabilities)?[...new Set(capabilities.filter(v=>['browser','desktop','recording','files','system','git','docker'].includes(v)))]:[];
       for(const j of s.jobs)if(j.deviceId===device.id&&j.status==='queued'&&j.expiresAt<this.clock()){j.status='cancelled';j.error='Queued approval expired before the device picked it up.';}
-      const candidate=busy?null:s.jobs.find(j=>j.deviceId===device.id&&j.status==='queued');if(candidate){const required=/^(system|git|docker)\./.test(candidate.command.kind)?candidate.command.kind.split('.')[0]:candidate.command.kind.startsWith('files.')?'files':candidate.command.kind==='desktop.launch'?'desktop':candidate.command.kind.startsWith('record.')?'recording':'browser';if(!d.capabilities.includes(required)){candidate.status='failed';candidate.error='This companion has not enabled the required '+required+' capability.';}else if(s.authority['device.execute']==='block'||s.authority['source.read']==='block'&&['browser.read','record.stop','skill.replay','files.read','files.list','system.info','git.status','git.log','git.diff','docker.list','docker.stats','docker.logs'].includes(candidate.command.kind)){candidate.status='cancelled';candidate.error='Device authority is blocked.';}else{candidate.status='leased';candidate.leasedAt=this.clock();job=structuredClone(candidate);}}return s;});return{job};
+      const candidate=busy?null:s.jobs.find(j=>j.deviceId===device.id&&j.status==='queued');if(candidate){const required=/^(system|git|docker)\./.test(candidate.command.kind)?candidate.command.kind.split('.')[0]:candidate.command.kind.startsWith('files.')?'files':candidate.command.kind==='desktop.launch'?'desktop':candidate.command.kind.startsWith('record.')?'recording':'browser';if(!d.capabilities.includes(required)){candidate.status='failed';candidate.error='This companion has not enabled the required '+required+' capability.';}else if(s.halted||s.authority['device.execute']==='block'||s.authority['source.read']==='block'&&['browser.read','record.stop','skill.replay','files.read','files.list','system.info','git.status','git.log','git.diff','docker.list','docker.stats','docker.logs'].includes(candidate.command.kind)){candidate.status='cancelled';candidate.error='Device authority is blocked.';}else{candidate.status='leased';candidate.leasedAt=this.clock();job=structuredClone(candidate);}}return s;});return{job};
   }
   async finish(token,id,result,error) {
     const d=await this.authenticate(token);const safe=JSON.parse(JSON.stringify(result??null));if(JSON.stringify(safe).length>50000)fail('Device result exceeds 50 KB.');
@@ -167,7 +171,7 @@ export class Automation {
   async revoke(id) { await this.update(s=>{s.devices=s.devices.filter(d=>d.id!==id);for(const j of s.jobs)if(j.deviceId===id&&j.status==='queued'){j.status='cancelled';j.error='Device revoked.';}return s;}); }
   async enqueue(deviceId,command) {
     const checked=validateCommand(command);let job;
-    await this.update(s=>{if(s.authority['device.execute']==='block'||s.authority['source.read']==='block'&&(checked.kind==='browser.read'||checked.kind==='record.stop'||checked.kind==='skill.replay'||checked.kind==='files.read'||checked.kind==='files.list'||/^(system|git|docker)\./.test(checked.kind)))fail('Authority blocks this device action or source read.',403);if(!s.devices.some(d=>d.id===deviceId))fail('Pair this device first.',409);if(s.jobs.filter(j=>['queued','leased'].includes(j.status)).length>=100)fail('Device queue is full.');if(s.jobs.length>=500){const i=s.jobs.findIndex(j=>!['queued','leased'].includes(j.status));if(i>=0)s.jobs.splice(i,1);}
+    await this.update(s=>{if(s.halted||s.authority['device.execute']==='block'||s.authority['source.read']==='block'&&(checked.kind==='browser.read'||checked.kind==='record.stop'||checked.kind==='skill.replay'||checked.kind==='files.read'||checked.kind==='files.list'||/^(system|git|docker)\./.test(checked.kind)))fail('Authority blocks this device action or source read.',403);if(!s.devices.some(d=>d.id===deviceId))fail('Pair this device first.',409);if(s.jobs.filter(j=>['queued','leased'].includes(j.status)).length>=100)fail('Device queue is full.');if(s.jobs.length>=500){const i=s.jobs.findIndex(j=>!['queued','leased'].includes(j.status));if(i>=0)s.jobs.splice(i,1);}
       job={id:randomUUID(),deviceId,command:checked,status:'queued',createdAt:this.clock(),expiresAt:this.clock()+600000};s.jobs.push(job);return s;});return job;
   }
   async saveSkill(name,steps) { if(typeof name!=='string'||!name.trim()||name.length>100)fail('Give the skill a name.');const command=validateCommand({kind:'skill.replay',args:{steps}});let skill;await this.update(s=>{if(s.skills.length>=50)fail('Skill limit reached.');skill={id:randomUUID(),name:name.trim(),steps:command.args.steps};s.skills.push(skill);return s;});return skill; }

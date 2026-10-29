@@ -21,7 +21,7 @@ Requires **Node.js 24.5 or later** (tested on 24.19). No dependency installation
 ```sh
 cd /workspace/JARVIS
 # First setup only; preserve an existing .env:
-cp .env.example .env
+if [ ! -f .env ]; then cp .env.example .env; fi
 # Edit the private .env: set GEMINI_API_KEY.
 npm start
 ```
@@ -88,8 +88,8 @@ Optional browser smoke tests use Python, Playwright and installed Chromium:
 ```sh
 python3 -m pip install playwright
 # If Chromium is absent: python3 -m playwright install chromium
-# Start npm start first, then:
-python3 test/browser.py
+# Run isolated fixture servers, never your personal accounts:
+python3 scripts/test-browser.py
 ```
 
 The browser tests intercept external AI success responses, test local UI interactions and persistence, and keep these fixtures separate from real provider checks. For a server on another port set JARVIS_TEST_URL. See [VALIDATION.md](VALIDATION.md) for release-specific live verification and untested capabilities.
@@ -128,3 +128,9 @@ node companion/smoke.js
 The queue test starts a separate companion process and reads only a temporary fixture file. Browser tests use controlled HTML, not personal accounts. Windows PowerShell uses `$env:NAME="value"` for environment overrides; see WINDOWS-RUN.txt for the standard setup.
 
 The shared terminal interface starts with `npm run cli` (`npm.cmd run cli` on Windows) while the brain is running. It uses the same AI settings and memory vault; ordinary terminal chat context is session-local. `/task` uses the bounded agent and prompts before approved reads/writes. See CAPABILITIES.md for limitations.
+
+## Version 3.0 HUD update
+
+The default home is now the cyan command HUD, with a canvas reactor, measured brain-server telemetry, real task/approval/provider state and persistent emergency pause/resume. Chat and all existing tools remain accessible from the top navigation and drawer. On Windows, `START-JARVIS.cmd` provides a browser launcher without changing your saved keys. See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) for exact verification and remaining limits. Use the latest main ZIP for this update; the original v3.0.0 tag is preserved.
+
+Latest source ZIP: https://github.com/mgGamez/JARVIS/archive/refs/heads/main.zip

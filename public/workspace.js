@@ -1,3 +1,4 @@
+import {initHUD} from './hud.js';
 import {initCore,setCoreStatus,openTasks} from './core.js';
 import { initAutomation, setAutomationStatus } from './automation.js';
 const $ = id => document.getElementById(id);
@@ -118,7 +119,7 @@ async function checkReminders() {
   } catch { lastReminderError = 'Reminders could not refresh. Check the server connection.'; $('reminderBanner').hidden = false; $('reminderBanner').textContent = lastReminderError; }
 }
 export function initWorkspace() {
-  initAutomation();initCore();
+  initAutomation();initCore();initHUD();
   $('toolsNav').onclick = openWorkspace;
   $('remindersNav').onclick = openReminders; $('mailNav').onclick = openMail;
   $('reminderBanner').onclick = openReminders;

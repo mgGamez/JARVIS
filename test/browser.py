@@ -17,8 +17,11 @@ with sync_playwright() as p:
         route.fulfill(response=response,json=data)
     page.route('**/api/status',unavailable_account_state)
     page.route('**/api/mail/connect',lambda route:route.fulfill(status=503,content_type='application/json',body=json.dumps({'error':'Configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.'})))
+    def nav(id):
+        if not page.locator('#sidebar').evaluate("e=>e.classList.contains('open')"): page.locator('#menuButton').click()
+        page.locator('#'+id).click()
     page.goto(os.environ.get('JARVIS_TEST_URL','http://127.0.0.1:3000'))
-    page.locator('#chatMode').wait_for()
+    page.locator('#hudChat').click();page.locator('#chatMode').wait_for()
     page.screenshot(path='/tmp/jarvis-v2-desktop.png',full_page=True)
     # Explicit provider failure: no invented assistant turn.
     page.route('**/api/chat',lambda route:route.fulfill(status=429,content_type='application/json',body=json.dumps({'error':'Test-only quota error'})))
@@ -28,10 +31,10 @@ with sync_playwright() as p:
     assert page.locator('.message.assistant').count()==0
     page.unroute('**/api/chat')
     # Explicit memory approval and persistence.
-    page.locator('#memoryNav').click();page.locator('#memoryInput').fill('I prefer concise answers.')
+    nav('memoryNav');page.locator('#memoryInput').fill('I prefer concise answers.')
     page.get_by_text('Approve & save memory',exact=True).click();assert page.locator('.memory-row').count()==1
     page.locator('#closePanel').click();page.reload();assert page.locator('#memoryCount').inner_text()=='1'
-    page.locator('.history-link').first.click();assert page.locator('.message.user').count()==1
+    nav('chatNav');page.locator('#menuButton').click();page.locator('.history-link').first.click();assert page.locator('.message.user').count()==1
     calls=[]
     def reply(route):
         calls.append(route.request.post_data_json)
@@ -45,9 +48,9 @@ with sync_playwright() as p:
     assert page.locator('#messages script').count()==0
     assert page.locator('.source-link').count()==1
     assert page.locator('.search-attribution').get_attribute('sandbox')=='allow-popups allow-popups-to-escape-sandbox'
-    page.reload();page.locator('.history-link').first.click();assert page.locator('.message.assistant').count()==1
+    page.reload();nav('chatNav');page.locator('#menuButton').click();page.locator('.history-link').first.click();assert page.locator('.message.assistant').count()==1
     # Actual local reminder approval, persistence, calendar download, deletion.
-    page.locator('#remindersNav').click()
+    nav('remindersNav')
     page.locator('#reminderTitle').fill('__browser_smoke__')
     page.locator('#reminderTime').fill((datetime.now()+timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'))
     page.get_by_text('Review reminder',exact=True).click()
@@ -62,11 +65,11 @@ with sync_playwright() as p:
     page.once('dialog',lambda d:d.accept());row.get_by_text('Delete',exact=True).click()
     row.wait_for(state='detached');page.locator('#closePanel').click()
     # Gmail truthful setup state; no real account/mail operation.
-    page.locator('#mailNav').click();page.get_by_text('Connect Gmail',exact=True).wait_for()
+    nav('mailNav');page.get_by_text('Connect Gmail',exact=True).wait_for()
     page.get_by_text('Connect Gmail',exact=True).click()
     page.locator('#toolResult').filter(has_text='GOOGLE_CLIENT_ID').wait_for()
     page.locator('#closePanel').click()
-    page.locator('#toolsNav').click();page.get_by_text('Desktop apps',exact=True).click()
+    nav('toolsNav');page.get_by_text('Desktop apps',exact=True).click()
     assert page.get_by_text('Open Notepad',exact=True).is_disabled()
     page.locator('#closePanel').click()
     # Image result safely rendered and downloadable from a controlled byte fixture.
@@ -74,20 +77,20 @@ with sync_playwright() as p:
     page.route('**/api/images',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps({'reply':'Test image','imageUrl':image_url})))
     import base64
     page.route('**'+image_url,lambda route:route.fulfill(status=200,content_type='image/png',body=base64.b64decode(PNG)))
-    page.locator('#newChat').click();page.locator('#prompt').fill('/image a test circle');page.locator('#sendButton').click()
+    nav('newChat');page.locator('#prompt').fill('/image a test circle');page.locator('#sendButton').click()
     page.locator('.generated-image').wait_for();expect(page.locator('.generated-image')).to_have_js_property('naturalWidth',1)
     assert page.get_by_text('Download image',exact=True).count()==1
     # Attachment is reviewable text, never executed.
     page.locator('#attachment').set_input_files({'name':'sample.py','mimeType':'text/plain','buffer':b'print(1/0)'})
     assert 'print(1/0)' in page.locator('#prompt').input_value();assert page.locator('#chatMode').input_value()=='debug'
-    page.locator('#settingsNav').click();assert page.locator('#voiceSelect').count()==1;page.locator('#closePanel').click()
-    page.locator('#newChat').click();page.set_viewport_size({'width':390,'height':844})
+    nav('settingsNav');assert page.locator('#voiceSelect').count()==1;page.locator('#closePanel').click()
+    nav('newChat');page.set_viewport_size({'width':390,'height':844})
     page.screenshot(path='/tmp/jarvis-v2-mobile.png',full_page=True)
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    page.locator('#menuButton').click();page.locator('#memoryNav').click()
+    nav('memoryNav')
     page.once('dialog',lambda d:d.accept());page.locator('.memory-row button').click();assert page.locator('.memory-row').count()==0
-    page.locator('#closePanel').click();page.locator('#menuButton').click()
-    page.once('dialog',lambda d:d.accept());page.locator('#clearHistory').click();assert page.locator('.history-row').count()==0
+    page.locator('#closePanel').click()
+    page.once('dialog',lambda d:d.accept());nav('clearHistory');assert page.locator('.history-row').count()==0
     page.reload();assert page.locator('#memoryCount').inner_text()=='0'
     assert not errors,errors
     browser.close()
