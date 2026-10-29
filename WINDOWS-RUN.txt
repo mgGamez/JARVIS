@@ -1,0 +1,66 @@
+JARVIS — Windows setup
+
+1. Install Node.js 24 LTS (24.5 or newer) from https://nodejs.org/.
+   Reopen PowerShell after installation. Verify: node --version
+2. Extract JARVIS-Windows.zip to your Downloads folder.
+   The archive contains a JARVIS folder. Open PowerShell and run:
+
+   Set-Location "$env:USERPROFILE\Downloads\JARVIS"
+
+   If you extracted elsewhere, change this path to the folder containing package.json.
+3. Create the local server configuration once (do not overwrite an existing .env):
+
+   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+   notepad .env
+
+   In Notepad, set these lines, replacing the placeholder with your own Gemini key:
+
+   GEMINI_API_KEY=YOUR_OWN_GEMINI_API_KEY
+   GEMINI_MODEL=gemini-3.1-flash-lite
+   HOST=127.0.0.1
+   PORT=3000
+
+   Save as .env (not .env.txt). The existing cloud credential is not exported.
+   Obtain or manage your own key at https://aistudio.google.com/apikey.
+   Keep .env private. It is ignored by Git. Never put the key in public/ files,
+   browser code, screenshots, chats, or uploaded archives.
+4. No npm install or build is required. In PowerShell:
+
+   npm.cmd run check
+   npm.cmd test
+   npm.cmd start
+
+   npm.cmd avoids the common PowerShell npm.ps1 execution-policy issue.
+   Keep this terminal running. Ctrl+C stops JARVIS.
+5. Open http://localhost:3000 in Chrome on this Windows computer.
+   You can also launch Chrome's default URL handler with:
+
+   Start-Process "http://localhost:3000"
+
+   Verify configuration (key presence only, not Gemini connectivity):
+
+   Invoke-RestMethod http://localhost:3000/api/status | Select-Object configured, model
+
+   Send a message in the app to test your actual Google credentials and quota.
+
+Voice: Allow the microphone when prompted. Speech input needs a compatible
+browser and may use an online browser-vendor speech service. Test voice playback
+in Settings. These features have not been tested on your specific Windows device.
+
+Troubleshooting:
+- ERR_CONNECTION_REFUSED: ensure npm.cmd start remains running in this folder and
+  check its output. Do not double-click index.html; use the HTTP URL above.
+- EADDRINUSE: another process uses port 3000. Identify it with
+  Get-NetTCPConnection -LocalPort 3000 -State Listen
+  Do not kill an unknown process. Change PORT to 3001 in .env, restart JARVIS,
+  and open http://localhost:3001 instead.
+- Gemini errors: check your key, account access and quota. Cloud-managed secret
+  injection does not transfer to Windows. The default model in .env.example is
+  older; the override above worked in the cloud but availability on your account
+  still needs a real chat test. Do not disable TLS verification.
+- Only loopback access is enabled. No cloud environment settings or router port
+  forwarding are required for use on this computer.
+
+The application source is unchanged. This archive excludes .env, credentials,
+.git, logs and caches. All project files are included as they existed in the
+cloud workspace, including files that have not been committed to Git.

@@ -1,0 +1,15 @@
+{
+  "name": "jarvis-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.5"
+  },
+  "scripts": {
+    "start": "node --use-env-proxy --env-file-if-exists=.env server/index.js",
+    "dev": "node --use-env-proxy --watch --env-file-if-exists=.env server/index.js",
+    "test": "node --test",
+    "check": "node --check server/index.js && node --check server/ai.js && node --check server/tools.js && node --check public/app.js"
+  }
+}
