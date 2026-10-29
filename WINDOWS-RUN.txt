@@ -2,12 +2,18 @@ JARVIS — Windows setup
 
 1. Install Node.js 24 LTS (24.5 or newer) from https://nodejs.org/.
    Reopen PowerShell after installation. Verify: node --version
-2. Extract JARVIS-Windows.zip to your Downloads folder.
-   The archive contains a JARVIS folder. Open PowerShell and run:
+2. Download the ZIP from GitHub using Code > Download ZIP.
+   Right-click JARVIS-main.zip and select Extract All.
+   Open the extracted JARVIS-main folder containing package.json.
+   In File Explorer, click the address bar, type powershell, and press Enter.
+   PowerShell opens in the correct folder.
 
-   Set-Location "$env:USERPROFILE\Downloads\JARVIS"
+   Alternatively, if package.json is at Downloads\JARVIS-main\package.json, run:
 
-   If you extracted elsewhere, change this path to the folder containing package.json.
+   Set-Location "$env:USERPROFILE\Downloads\JARVIS-main"
+
+   Extract All may create an extra outer folder. Always use the folder containing
+   package.json, public, and server. There is no separate JARVIS-Windows.zip to find.
 3. Create the local server configuration once (do not overwrite an existing .env):
 
    if (-not (Test-Path .env)) { Copy-Item .env.example .env }
@@ -61,6 +67,6 @@ Troubleshooting:
 - Only loopback access is enabled. No cloud environment settings or router port
   forwarding are required for use on this computer.
 
-The application source is unchanged. This archive excludes .env, credentials,
-.git, logs and caches. All project files are included as they existed in the
-cloud workspace, including files that have not been committed to Git.
+GitHub Download ZIP includes the committed project files under JARVIS-main.
+Real credentials and .env are not committed or included. The .env.example file
+is a template with an empty API key; create your private .env as described above.
